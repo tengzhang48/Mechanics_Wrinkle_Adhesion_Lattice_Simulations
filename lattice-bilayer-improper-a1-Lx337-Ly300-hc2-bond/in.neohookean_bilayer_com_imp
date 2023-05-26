@@ -1,0 +1,224 @@
+# wrinkle of a bilyaer structure in lammps
+# Created by Teng Zhang at 12/7/2016
+
+units		metal
+atom_style	full
+
+# create box
+
+dimension       2	
+boundary	p	p	p
+
+processors * * 1
+# ----------------------- ATOM DEFINITION ----------------------------
+read_data        lattice-bilayer-improper-a1-Lx337-Ly300-hc2-bond.lam 
+# ------------------------ FORCE FIELDS ------------------------------
+# turn off the pair
+
+atom_modify sort 10 2.0
+comm_modify mode single cutoff 3.0 vel yes
+comm_style tiled
+
+pair_style	lj/cut 5.0
+pair_coeff * * 0.001 0.1 0.5
+special_bonds lj/coul 0 0 1
+
+
+bond_style    harmonic
+
+# for bulk substrate 
+bond_coeff	1 0.333333333333333 0.0
+bond_coeff	2 0.333333333333333  0.0
+
+# for bulk film
+bond_coeff	3 33.333333333333329 0.0
+bond_coeff	4 33.333333333333329  0.0
+
+# for substrate edge
+bond_coeff	5 0.166666666666667  0.0 
+
+# for film-sbustrate interface 
+bond_coeff	6 16.833333333333332  0.0 
+
+# for film edge
+bond_coeff	7 16.666666666666668  0.0
+
+improper_style    neohookean
+improper_coeff	1 2.0 40.0 1.0
+improper_coeff	2 200.0 4000.0 1.0
+
+# ----------------------- COMPUTATION FOR OUTPUT ----------------------------
+compute 	patompe all pe/atom 
+compute		patoms all stress/atom NULL
+compute		tstr all reduce ave c_patoms[1] c_patoms[2] c_patoms[3]
+compute         xyzcoor all property/atom x y z 
+compute 	xmax all reduce max c_xyzcoor[1]
+compute 	xmin all reduce min c_xyzcoor[1] 
+compute         ymax all reduce max c_xyzcoor[2]  
+compute         ymin all reduce min c_xyzcoor[2]  
+#----------------------- Define group ------------------------------
+
+region bot block INF INF INF -149.5 INF INF units box
+group bot region bot 
+
+group substrate type 1
+group film type 2
+#----------------------static balance---------------------
+
+balance 1.05 rcb
+
+###############################################
+# Store final cell length for strain calculations
+variable tmp equal "lx"
+variable L0 equal ${tmp}
+print "Initial Length, L0: ${L0}"
+######################################
+
+
+# use loop to change the stress free length of the bond and angle of the film
+
+label loopa 
+variable a loop 250 
+
+
+#############################################################################
+
+# DEFORMATION under small time step and high temp
+# Effectively introduce perturbation
+
+###############################################
+reset_timestep 0
+timestep	0.0001
+variable tst equal 0.001*${a}
+variable hlxf equal "v_L0*(1.0-v_tst)/2.0"
+
+fix	       1 all nve
+fix	       2 substrate langevin 1.0 1.0 0.1 904297
+fix	       3 film langevin 10.0 10.0 0.1 904289
+fix 	   4 all deform 10 x final -${hlxf} ${hlxf} remap x  
+fix 	   5 bot setforce NULL 0.0 NULL
+fix 	   6 all enforce2d
+
+#----------------------- Output ------------------------------
+# Output to file
+variable LLy equal "c_ymax - c_ymin"
+variable LLx equal "c_xmax - c_xmin"
+variable strain equal "(lx - v_L0)/v_L0"
+variable dv equal 1.0
+variable grah equal 1.0
+
+
+# In metal unit, the pressure unit is bar (10^5)
+# In the current unit system, the shear modulus is 2, which corresponds to 3.2x10^11
+
+
+variable myenergy atom "c_patompe"
+variable mystress1 atom "c_patoms[1]/(1000000.0*3.2*v_dv)"
+variable mystress2 atom "c_patoms[2]/(1000000.0*3.2*v_dv)"
+variable mystress3 atom "c_patoms[3]/(1000000.0*3.2*v_dv)"
+variable mystress4 atom "c_patoms[4]/(1000000.0*3.2*v_dv)"
+variable mystress5 atom "c_patoms[5]/(1000000.0*3.2*v_dv)"
+variable mystress6 atom "c_patoms[6]/(1000000.0*3.2*v_dv)"
+
+variable p1 equal "v_strain"
+variable p2 equal "-pxx*lx*ly/(1000000.0*3.2*v_LLx*v_LLy*v_grah)"
+variable p3 equal "-pyy*lx*ly/(1000000.0*3.2*v_LLx*v_LLy*v_grah)"
+variable p4 equal "-pzz*lx*ly/(1000000.0*3.2*v_LLx*v_LLy*v_grah)"
+variable pa1 equal "c_tstr[1]/(1000000.0*3.2*v_dv)"
+variable pa2 equal "c_tstr[2]/(1000000.0*3.2*v_dv)"
+variable pa3 equal "c_tstr[3]/(1000000.0*3.2*v_dv)"
+
+# Display thermo
+thermo 	1000
+thermo_style	custom step v_strain temp v_p2 v_p3 v_p4 v_pa1 v_pa2 v_pa3 ke pe press 
+thermo_modify   lost ignore flush yes
+
+run		10000
+
+unfix 1
+unfix 2
+unfix 3
+unfix 4
+unfix 5
+unfix 6
+
+##########################################################################
+# Energy minimization with fire to avoid large force in the following run
+##########################################################################
+
+min_style fire
+
+fix 	       1 bot setforce NULL 0.0 NULL
+fix 	       2 all enforce2d
+
+minimize 1.0e-5 1.0e-7 1000 10000
+
+unfix 1
+unfix 2
+
+################################################################
+# DEFORMATION under large time step to get the equilibrium state
+# low temperature
+################################################################
+reset_timestep 1
+timestep	0.001
+fix	       1 all nve
+fix	       2 all langevin 0.001 0.001 0.1 904297
+fix 	   3 bot setforce NULL 0.0 NULL
+fix 	   4 all enforce2d
+
+#----------------------- Output ------------------------------
+# Output to file
+variable LLy equal "c_ymax - c_ymin"
+variable LLx equal "c_xmax - c_xmin"
+variable strain equal "(lx - v_L0)/v_L0"
+variable dv equal 1.0
+variable grah equal 1.0
+
+
+# In metal unit, the pressure unit is bar (10^5)
+# In the current unit system, the shear modulus is 2, which corresponds to 3.2x10^11
+
+
+variable myenergy atom "c_patompe"
+variable mystress1 atom "c_patoms[1]/(1000000.0*3.2*v_dv)"
+variable mystress2 atom "c_patoms[2]/(1000000.0*3.2*v_dv)"
+variable mystress3 atom "c_patoms[3]/(1000000.0*3.2*v_dv)"
+variable mystress4 atom "c_patoms[4]/(1000000.0*3.2*v_dv)"
+variable mystress5 atom "c_patoms[5]/(1000000.0*3.2*v_dv)"
+variable mystress6 atom "c_patoms[6]/(1000000.0*3.2*v_dv)"
+
+variable p1 equal "v_strain"
+variable p2 equal "-pxx*lx*ly*lz/(1000000.0*3.2*v_LLx*v_LLy*v_grah)"
+variable p3 equal "-pyy*lx*ly*lz/(1000000.0*3.2*v_LLx*v_LLy*v_grah)"
+variable p4 equal "-pzz*lx*ly*lz/(1000000.0*3.2*v_LLx*v_LLy*v_grah)"
+variable pa1 equal "c_tstr[1]/(1000000.0*3.2*v_dv)"
+variable pa2 equal "c_tstr[2]/(1000000.0*3.2*v_dv)"
+variable pa3 equal "c_tstr[3]/(1000000.0*3.2*v_dv)"
+
+fix extra1 all print 100 "${p1} ${p2} ${p3} ${p4} ${pa1}" file ./txt/bilayer-stress-${a}.txt screen no
+
+dump           1 all custom 20000 ./fxyz/test_bond_bilayer_${a}.xyz type x y z v_myenergy v_mystress1 v_mystress2 v_mystress3 v_mystress4 v_mystress5 v_mystress6 id
+
+# Display thermo
+thermo 	1000
+thermo_style	custom step v_strain temp v_p2 v_p3 v_p4 v_pa1 v_pa2 v_pa3 ke pe press 
+thermo_modify   lost ignore flush yes
+
+run		20000
+
+unfix 1
+unfix 2
+unfix 3
+unfix 4
+unfix extra1
+
+undump 1
+
+next a
+
+jump SELF loopa 
+
+################################################################
+# Finish simulations
+################################################################
