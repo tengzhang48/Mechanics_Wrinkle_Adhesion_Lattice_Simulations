@@ -123,7 +123,7 @@ ty_atom = ones(nxy,1);
 % R = 40;              % indenter radius
 % y0 = yc + 8*a + R;     % height of the indenter 
 
-R = 300;              % indenter radius
+R = 200;              % indenter radius
 dd = 6*a;
 
 Rc = num2str(R);
