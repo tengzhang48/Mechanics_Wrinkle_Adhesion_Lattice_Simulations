@@ -1,1 +1,3 @@
-This folder contains the Lammps script for simulating the wrinkled adhesion, with film thickness as 4, compressive strain as 0.1, and the depth of the energy well of the L-J potential is 1.
+This folder contains the Lammps script for simulating the wrinkled adhesion, with film thickness as 4.
+Compressive strain as 0.1, and the depth of the energy well of the L-J potential is 1. 
+Parameters can be modifiedFor for other simulation cases.
