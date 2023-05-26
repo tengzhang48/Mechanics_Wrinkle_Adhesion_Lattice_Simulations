@@ -1,0 +1,2 @@
+This folder include the Lammps source files and data files for the representative simulations
+You need to copy the source files to the lammps/src folder to compile it
