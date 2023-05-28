@@ -1,1 +1,2 @@
 This folder contains the Lammps script for simulating the 2D adhesion. The radius of the cylinderical indent is 200. 
+Please create two folders "fxyz" and  "txt" to store the simulation outputs
